@@ -5,6 +5,7 @@ import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Counter
+import Todo
 
 -- MODEL
 
@@ -19,6 +20,7 @@ type alias Model =
     , isNavOpen : Bool
     , modules : List Module
     , counterModel : Counter.Model
+    , todoModel : Todo.Model
     }
 
 initialModel : Model
@@ -40,6 +42,7 @@ initialModel =
           }
         ]
     , counterModel = Counter.init
+    , todoModel = Todo.init
     }
 
 
@@ -50,6 +53,7 @@ type Msg
     | ToggleNav
     | GoHome
     | CounterMsg Counter.Msg
+    | TodoMsg Todo.Msg
 
 
 update : Msg -> Model -> Model
@@ -66,6 +70,9 @@ update msg model =
 
         CounterMsg counterMsg ->
             { model | counterModel = Counter.update counterMsg model.counterModel }
+
+        TodoMsg todoMsg ->
+            { model | todoModel = Todo.update todoMsg model.todoModel }
 
 
 -- VIEW
@@ -157,6 +164,8 @@ viewModuleContent id model =
                 , p [] [ text module_.description ]
                 , if id == "counter" then
                     Html.map CounterMsg (Counter.view model.counterModel)
+                  else if id == "todo" then
+                    Html.map TodoMsg (Todo.view model.todoModel)
                   else
                     div [ class "module-placeholder" ]
                         [ p [] [ text "Module content will be loaded here." ]

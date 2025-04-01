@@ -106,6 +106,15 @@ jobs:
             echo "✅ Using existing index.html file"
           fi
 
+        - name: Ensure correct CSS path
+          run: |
+            if [ -f "build/index.html" ]; then
+              # Replace potential incorrect CSS paths with the correct one
+              sed -i 's|href="/public/style.css"|href="./style.css"|g' build/index.html
+              sed -i 's|href="public/style.css"|href="./style.css"|g' build/index.html
+              echo "✅ Updated CSS path in index.html"
+            fi
+
       - name: List build files
         run: |
           echo "Listing files in build directory:"

@@ -1,6 +1,12 @@
 # Elm Examples Hub
 
-A collection of Elm example applications demonstrating the Elm architecture and various UI components.
+A collection of interactive Elm example applications demonstrating the Elm architecture and various UI components.
+
+## Live Demo
+
+**[View the live application](https://stamnostomp.github.io/elm-example-sites/)**
+
+Explore the working examples directly in your browser without installation.
 
 ## Examples Included
 
@@ -39,7 +45,9 @@ The built application will be in `result/share/elm-app/`.
 
 ## Deployment
 
-This project is configured for automatic deployment to GitHub Pages when changes are pushed to the main branch.
+This project is configured for automatic deployment to GitHub Pages when changes are pushed to the main branch. You can view the deployed application at:
+
+https://stamnostomp.github.io/elm-example-sites/
 
 ### Manual Deployment
 
@@ -49,21 +57,6 @@ You can also trigger a deployment manually:
 2. Navigate to the "Actions" tab
 3. Select the "Deploy Elm Application" workflow
 4. Click "Run workflow"
-
-### Local Preview of Production Build
-
-To preview the production build locally:
-
-```bash
-# Build the application
-nix build
-
-# Serve the built files
-cd result/share/elm-app
-python -m http.server
-```
-
-Then visit http://localhost:8000 in your browser.
 
 ## License
 

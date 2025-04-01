@@ -1,3 +1,4 @@
+
 name: Deploy Elm Application
 
 on:
@@ -10,10 +11,6 @@ permissions:
   pages: write
   id-token: write
 
-concurrency:
-  group: "pages"
-  cancel-in-progress: true
-
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
@@ -25,36 +22,95 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Install Nix
-        uses: DeterminateSystems/nix-installer-action@main
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          node-version: '18'
 
-      - name: Build with Elm directly (fallback)
-        if: always()
+      - name: Install Elm and tools
         run: |
-          # Create dist directory
-          mkdir -p dist
+          npm install -g elm uglify-js
+          elm --version
 
-          # Copy static files
-          cp -r public/* dist/
+      - name: Create build directory
+        run: mkdir -p build
 
-          # Install Elm
-          npm install -g elm
+      - name: Compile Elm application
+        run: |
+          # Attempt to build the Elm application with detailed output
+          echo "Compiling the Elm application..."
+          elm make src/Main.elm --optimize --output=build/elm.js
 
-          # Compile the Elm application directly
-          elm make src/Main.elm --optimize --output=dist/elm.js
+          # Check if compilation was successful
+          if [ $? -eq 0 ]; then
+            echo "✅ Elm compilation successful!"
+          else
+            echo "❌ Elm compilation failed"
+            exit 1
+          fi
 
-          # List files to verify
-          ls -la dist/
+      - name: Minify JavaScript
+        run: |
+          echo "Minifying the JavaScript..."
+          uglifyjs build/elm.js --compress "pure_funcs=[F2,F3,F4,F5,F6,F7,F8,F9,A2,A3,A4,A5,A6,A7,A8,A9],pure_getters,keep_fargs=false,unsafe_comps,unsafe" | uglifyjs --mangle --output=build/elm.min.js
+          mv build/elm.min.js build/elm.js
+          echo "✅ JavaScript minification complete"
 
-      - name: Setup Pages
+      - name: Copy static files
+        run: |
+          echo "Copying static files to build directory..."
+          # Copy all files from public directory if it exists
+          if [ -d "public" ]; then
+            cp -r public/* build/
+            echo "✅ Copied files from public directory"
+          else
+            echo "⚠️ No public directory found, skipping"
+          fi
+
+      - name: Ensure index.html exists
+        run: |
+          # Create a fallback index.html if needed
+          if [ ! -f "build/index.html" ]; then
+            echo "Creating basic index.html..."
+            cat > build/index.html << EOF
+          <!DOCTYPE html>
+          <html lang="en">
+            <head>
+              <meta charset="utf-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>Elm Examples Hub</title>
+              <link rel="stylesheet" href="style.css">
+            </head>
+            <body>
+              <div id="elm-app"></div>
+              <script src="elm.js"></script>
+              <script>
+                document.addEventListener('DOMContentLoaded', function() {
+                  var app = Elm.Main.init({
+                    node: document.getElementById("elm-app")
+                  });
+                });
+              </script>
+            </body>
+          </html>
+          EOF
+            echo "✅ Created index.html file"
+          else
+            echo "✅ Using existing index.html file"
+          fi
+
+      - name: List build files
+        run: |
+          echo "Listing files in build directory:"
+          ls -la build/
+
+      - name: Setup GitHub Pages
         uses: actions/configure-pages@v2
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v1
         with:
-          path: './dist'
+          path: './build'
 
       - name: Deploy to GitHub Pages
         id: deployment

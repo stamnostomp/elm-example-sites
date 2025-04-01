@@ -6,6 +6,7 @@ import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Counter
 import Todo
+import Calculator
 
 -- MODEL
 
@@ -21,6 +22,7 @@ type alias Model =
     , modules : List Module
     , counterModel : Counter.Model
     , todoModel : Todo.Model
+    , calculatorModel : Calculator.Model
     }
 
 initialModel : Model
@@ -43,6 +45,7 @@ initialModel =
         ]
     , counterModel = Counter.init
     , todoModel = Todo.init
+    , calculatorModel = Calculator.init
     }
 
 
@@ -54,6 +57,7 @@ type Msg
     | GoHome
     | CounterMsg Counter.Msg
     | TodoMsg Todo.Msg
+    | CalculatorMsg Calculator.Msg
 
 
 update : Msg -> Model -> Model
@@ -73,6 +77,9 @@ update msg model =
 
         TodoMsg todoMsg ->
             { model | todoModel = Todo.update todoMsg model.todoModel }
+
+        CalculatorMsg calculatorMsg ->
+            { model | calculatorModel = Calculator.update calculatorMsg model.calculatorModel  }
 
 
 -- VIEW
@@ -166,6 +173,8 @@ viewModuleContent id model =
                     Html.map CounterMsg (Counter.view model.counterModel)
                   else if id == "todo" then
                     Html.map TodoMsg (Todo.view model.todoModel)
+                  else if id == "calculator" then
+                    Html.map CalculatorMsg (Calculator.view model.calculatorModel)
                   else
                     div [ class "module-placeholder" ]
                         [ p [] [ text "Module content will be loaded here." ]

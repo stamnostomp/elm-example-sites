@@ -1,25 +1,280 @@
-      body {
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
-        margin: 0;
-        padding: 20px;
-        text-align: center;
-      }
-      .container {
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        gap: 1rem;
-        margin-top: 2rem;
-      }
-      button {
-        font-size: 1.5rem;
-        width: 3rem;
-        height: 3rem;
-        border-radius: 8px;
-        border: 1px solid #ccc;
-        background-color: #f9f9f9;
-        cursor: pointer;
-      }
-      button:hover {
-        background-color: #eee;
-      }
+/* Everblush color palette */
+:root {
+  --ev-background: #141b1e;
+  --ev-foreground: #dadada;
+  --ev-black: #232a2d;
+  --ev-red: #e57474;
+  --ev-green: #8ccf7e;
+  --ev-yellow: #e5c76b;
+  --ev-blue: #67b0e8;
+  --ev-magenta: #c47fd5;
+  --ev-cyan: #6cbfbf;
+  --ev-white: #b3b9b8;
+  --ev-bright-black: #2d3437;
+  --ev-bright-red: #ef7e7e;
+  --ev-bright-green: #96d988;
+  --ev-bright-yellow: #f4d67a;
+  --ev-bright-blue: #71baf2;
+  --ev-bright-magenta: #ce89df;
+  --ev-bright-cyan: #67cbe7;
+  --ev-bright-white: #bdc3c2;
+
+  /* Additional UI colors */
+  --nav-width: 280px;
+  --header-height: 60px;
+  --transition-speed: 0.3s;
+}
+
+/* Global styles */
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  margin: 0;
+  padding: 0;
+  background-color: var(--ev-background);
+  color: var(--ev-foreground);
+}
+
+/* Layout containers */
+.app-container {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.main-content {
+  display: flex;
+  flex: 1;
+  position: relative;
+}
+
+/* Header styles */
+header {
+  background-color: var(--ev-black);
+  height: var(--header-height);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.header-container {
+  display: flex;
+  align-items: center;
+  padding: 0 1rem;
+  height: 100%;
+}
+
+.site-title {
+  margin: 0;
+  font-size: 1.5rem;
+  color: var(--ev-cyan);
+  cursor: pointer;
+  transition: color 0.2s;
+}
+
+.site-title:hover {
+  color: var(--ev-bright-cyan);
+}
+
+.menu-toggle {
+  background: none;
+  border: none;
+  color: var(--ev-foreground);
+  font-size: 1.5rem;
+  padding: 0.5rem;
+  margin-right: 1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.menu-toggle:hover {
+  color: var(--ev-bright-white);
+}
+
+/* Navigation styles */
+nav {
+  background-color: var(--ev-bright-black);
+  width: var(--nav-width);
+  height: calc(100vh - var(--header-height));
+  position: sticky;
+  top: var(--header-height);
+  left: 0;
+  overflow-y: auto;
+  transition: transform var(--transition-speed) ease;
+  z-index: 5;
+  border-right: 1px solid var(--ev-black);
+}
+
+.nav-closed {
+  transform: translateX(calc(-1 * var(--nav-width)));
+}
+
+.nav-open {
+  transform: translateX(0);
+}
+
+.nav-header {
+  padding: 1rem;
+  font-size: 1.2rem;
+  font-weight: bold;
+  color: var(--ev-bright-cyan);
+  border-bottom: 1px solid var(--ev-black);
+}
+
+.module-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.module-item {
+  padding: 1rem;
+  border-bottom: 1px solid var(--ev-black);
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.module-item:hover {
+  background-color: var(--ev-black);
+}
+
+.module-item.selected {
+  background-color: var(--ev-blue);
+  color: var(--ev-background);
+}
+
+.module-item.selected .module-description {
+  color: var(--ev-black);
+}
+
+.module-name {
+  font-weight: bold;
+  margin-bottom: 0.5rem;
+}
+
+.module-description {
+  font-size: 0.9rem;
+  color: var(--ev-white);
+}
+
+/* Content area */
+.content {
+  flex: 1;
+  padding: 2rem;
+  transition: margin-left var(--transition-speed) ease;
+  min-height: calc(100vh - var(--header-height));
+  background-color: var(--ev-background);
+}
+
+/* Welcome page */
+.welcome {
+  max-width: 800px;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.welcome h2 {
+  color: var(--ev-bright-cyan);
+  margin-bottom: 1.5rem;
+}
+
+.featured-modules {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1.5rem;
+  margin-top: 2rem;
+}
+
+.featured-module {
+  background-color: var(--ev-black);
+  border-radius: 8px;
+  padding: 1.5rem;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+  transition: transform 0.2s, box-shadow 0.2s;
+  cursor: pointer;
+  text-align: left;
+}
+
+.featured-module:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 6px 10px rgba(0, 0, 0, 0.15);
+}
+
+.featured-module h3 {
+  color: var(--ev-bright-green);
+  margin-top: 0;
+}
+
+.view-button {
+  background-color: var(--ev-blue);
+  color: var(--ev-background);
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: bold;
+  margin-top: 1rem;
+  transition: background-color 0.2s;
+}
+
+.view-button:hover {
+  background-color: var(--ev-bright-blue);
+}
+
+/* Module content */
+.module-content {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.module-content h2 {
+  color: var(--ev-bright-magenta);
+  border-bottom: 2px solid var(--ev-magenta);
+  padding-bottom: 0.5rem;
+}
+
+.module-placeholder {
+  background-color: var(--ev-black);
+  border-radius: 8px;
+  padding: 2rem;
+  margin-top: 2rem;
+  text-align: center;
+  color: var(--ev-bright-white);
+}
+
+/* Original counter app styles */
+.counter-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 2rem;
+}
+
+.counter-container button {
+  font-size: 1.5rem;
+  width: 3rem;
+  height: 3rem;
+  border-radius: 8px;
+  border: 1px solid var(--ev-black);
+  background-color: var(--ev-bright-black);
+  color: var(--ev-foreground);
+  cursor: pointer;
+}
+
+.counter-container button:hover {
+  background-color: var(--ev-black);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .featured-modules {
+    grid-template-columns: 1fr;
+  }
+
+  .content {
+    padding: 1rem;
+  }
+}

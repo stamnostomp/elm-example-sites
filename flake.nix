@@ -20,7 +20,7 @@
             --host=localhost \
             --pushstate \
             --hot \
-            -- -- output=elm.js --debug
+            -- --output=elm.js --debug
         '';
 
         elmApp = pkgs.stdenv.mkDerivation {

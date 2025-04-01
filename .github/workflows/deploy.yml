@@ -49,8 +49,18 @@ jobs:
       - name: Minify JavaScript
         run: |
           echo "Minifying the JavaScript..."
-          uglifyjs build/elm.js --compress "pure_funcs=[F2,F3,F4,F5,F6,F7,F8,F9,A2,A3,A4,A5,A6,A7,A8,A9],pure_getters,keep_fargs=false,unsafe_comps,unsafe" | uglifyjs --mangle --output=build/elm.min.js
+          # First perform the compression step to a temporary file
+          uglifyjs build/elm.js --compress "pure_funcs=[F2,F3,F4,F5,F6,F7,F8,F9,A2,A3,A4,A5,A6,A7,A8,A9],pure_getters,keep_fargs=false,unsafe_comps,unsafe" > build/elm.compressed.js
+
+          # Then perform the mangling step to the final file
+          uglifyjs build/elm.compressed.js --mangle --output build/elm.min.js
+
+          # Replace the original with the minified version
           mv build/elm.min.js build/elm.js
+
+          # Clean up temporary file
+          rm build/elm.compressed.js
+
           echo "✅ JavaScript minification complete"
 
       - name: Copy static files

@@ -3,14 +3,13 @@ name: Deploy Elm Application
 on:
   push:
     branches: [ main, master ]
-  workflow_dispatch:  # Allows manual triggering
+  workflow_dispatch:
 
 permissions:
   contents: read
   pages: write
   id-token: write
 
-# Allow only one concurrent deployment
 concurrency:
   group: "pages"
   cancel-in-progress: true
@@ -27,29 +26,26 @@ jobs:
         uses: actions/checkout@v3
 
       - name: Install Nix
-        uses: cachix/install-nix-action@v22
+        uses: DeterminateSystems/nix-installer-action@main
         with:
-          github_access_token: ${{ secrets.GITHUB_TOKEN }}
-          nix_path: nixpkgs=channel:nixos-unstable
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Setup Cachix
-        uses: cachix/cachix-action@v12
-        with:
-          name: elm-pages
-          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
-
-      - name: Build Elm application
+      - name: Build with Elm directly (fallback)
+        if: always()
         run: |
-          # Build the application using the flake
-          nix build
-
-          # Create the pages directory
+          # Create dist directory
           mkdir -p dist
 
-          # Copy the built files to the pages directory
-          cp -r result/share/elm-app/* dist/
+          # Copy static files
+          cp -r public/* dist/
 
-          # Make sure we have the essential files
+          # Install Elm
+          npm install -g elm
+
+          # Compile the Elm application directly
+          elm make src/Main.elm --optimize --output=dist/elm.js
+
+          # List files to verify
           ls -la dist/
 
       - name: Setup Pages

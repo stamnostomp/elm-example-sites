@@ -33,25 +33,36 @@
             uglify-js
           ];
 
-          configuerPhase = ''
+          configurePhase = ''
             export HOME=$TMPDIR
             export JS="elm.js"
           '';
 
           buildPhase = ''
-            elm make src/Main.elm --output=public/elm.js --optimize
-            uglifyjs public/elm.js --compress "pure_funcs=[F2,F3,F4,F5,F6,F7,F8,F9,A2,A3,A4,A5,A6,A7,A8,A9],pure_getters,keep_fargs=false,unsafe_comps,unsafe" | uglifyjs --mangle --output public/elm.js
+            # Build with detailed debug output and more memory
+            elm make src/Main.elm --output=elm.js --optimize --report=json || elm make src/Main.elm --output=elm.js --optimize
+
+            # Only uglify if the build succeeded
+            if [ -f elm.js ]; then
+              uglifyjs elm.js --compress "pure_funcs=[F2,F3,F4,F5,F6,F7,F8,F9,A2,A3,A4,A5,A6,A7,A8,A9],pure_getters,keep_fargs=false,unsafe_comps,unsafe" | uglifyjs --mangle --output elm.js
+            fi
           '';
 
           installPhase = ''
             mkdir -p $out/bin
-            mkdir -P $out/share/elm-app
+            mkdir -p $out/share/elm-app
 
-            cp public/elm.js $out/share/elm-app/
-            cp public/style.css $out/share/elm-app/
-            cp public/index.html $out/share/elm-app/
+            cp elm.js $out/share/elm-app/
+            cp -r public/* $out/share/elm-app/
 
-            cat > $out/bin/elm-app >>EOF
+            # Create a simple script to run the app
+            cat > $out/bin/elm-app << EOF
+            #!/bin/sh
+            echo "Opening Elm app in your default browser..."
+            cd $out/share/elm-app
+            exec python3 -m http.server 8000
+            EOF
+
             chmod +x $out/bin/elm-app
           '';
         };
@@ -70,7 +81,7 @@
 
           shellHook =  ''
             echo "Elm development environment loaded!"
-            echo "Availible command:"
+            echo "Available commands:"
             echo "elm-dev - start elm live dev server"
           '';
         };

@@ -4,7 +4,7 @@ import Browser
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
-
+import Counter
 
 -- MODEL
 
@@ -18,6 +18,7 @@ type alias Model =
     { currentModule : Maybe String
     , isNavOpen : Bool
     , modules : List Module
+    , counterModel : Counter.Model
     }
 
 initialModel : Model
@@ -37,8 +38,8 @@ initialModel =
           , name = "Calculator"
           , description = "A simple calculator for basic arithmetic operations"
           }
-        -- Add more modules here as they are created
         ]
+    , counterModel = Counter.init
     }
 
 
@@ -48,6 +49,7 @@ type Msg
     = SelectModule String
     | ToggleNav
     | GoHome
+    | CounterMsg Counter.Msg
 
 
 update : Msg -> Model -> Model
@@ -61,6 +63,9 @@ update msg model =
 
         GoHome ->
             { model | currentModule = Nothing }
+
+        CounterMsg counterMsg ->
+            { model | counterModel = Counter.update counterMsg model.counterModel }
 
 
 -- VIEW
@@ -102,7 +107,6 @@ viewModuleItem currentModule module_ =
         [ class
             (if currentModule == Just module_.id then
                 "module-item selected"
-
              else
                 "module-item"
             )
@@ -127,7 +131,7 @@ viewContent model =
                 ]
 
             Just id ->
-                [ viewModuleContent id model.modules ]
+                [ viewModuleContent id model ]
         )
 
 
@@ -140,21 +144,24 @@ viewFeaturedModule module_ =
         ]
 
 
-viewModuleContent : String -> List Module -> Html Msg
-viewModuleContent id modules =
+viewModuleContent : String -> Model -> Html Msg
+viewModuleContent id model =
     let
         maybeModule =
-            List.filter (\m -> m.id == id) modules |> List.head
+            List.filter (\m -> m.id == id) model.modules |> List.head
     in
     case maybeModule of
         Just module_ ->
             div [ class "module-content" ]
                 [ h2 [] [ text module_.name ]
                 , p [] [ text module_.description ]
-                , div [ class "module-placeholder" ]
-                    [ p [] [ text "Module content will be loaded here." ]
-                    , p [] [ text ("ID: " ++ id) ]
-                    ]
+                , if id == "counter" then
+                    Html.map CounterMsg (Counter.view model.counterModel)
+                  else
+                    div [ class "module-placeholder" ]
+                        [ p [] [ text "Module content will be loaded here." ]
+                        , p [] [ text ("ID: " ++ id) ]
+                        ]
                 ]
 
         Nothing ->

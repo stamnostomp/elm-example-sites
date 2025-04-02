@@ -1,20 +1,25 @@
 module Main exposing (main)
 
 import Browser
+import Calculator
+import Counter
+import Form
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
-import Counter
 import Todo
-import Calculator
+
+
 
 -- MODEL
+
 
 type alias Module =
     { id : String
     , name : String
     , description : String
     }
+
 
 type alias Model =
     { currentModule : Maybe String
@@ -23,7 +28,9 @@ type alias Model =
     , counterModel : Counter.Model
     , todoModel : Todo.Model
     , calculatorModel : Calculator.Model
+    , formModel : Form.Model
     }
+
 
 initialModel : Model
 initialModel =
@@ -42,14 +49,21 @@ initialModel =
           , name = "Calculator"
           , description = "A simple calculator for basic arithmetic operations"
           }
+        , { id = "form"
+          , name = "Registration Form"
+          , description = " A form with validation demonstrating more complex state managment"
+          }
         ]
     , counterModel = Counter.init
     , todoModel = Todo.init
     , calculatorModel = Calculator.init
+    , formModel = Form.init
     }
 
 
+
 -- UPDATE
+
 
 type Msg
     = SelectModule String
@@ -58,6 +72,7 @@ type Msg
     | CounterMsg Counter.Msg
     | TodoMsg Todo.Msg
     | CalculatorMsg Calculator.Msg
+    | FormMsg Form.Msg
 
 
 update : Msg -> Model -> Model
@@ -79,10 +94,15 @@ update msg model =
             { model | todoModel = Todo.update todoMsg model.todoModel }
 
         CalculatorMsg calculatorMsg ->
-            { model | calculatorModel = Calculator.update calculatorMsg model.calculatorModel  }
+            { model | calculatorModel = Calculator.update calculatorMsg model.calculatorModel }
+
+        FormMsg formMsg ->
+            { model | formModel = Form.update formMsg model.formModel }
+
 
 
 -- VIEW
+
 
 view : Model -> Html Msg
 view model =
@@ -100,7 +120,14 @@ viewHeader model =
     header []
         [ div [ class "header-container" ]
             [ button [ class "menu-toggle", onClick ToggleNav ]
-                [ text (if model.isNavOpen then "≡" else "≡") ]
+                [ text
+                    (if model.isNavOpen then
+                        "≡"
+
+                     else
+                        "≡"
+                    )
+                ]
             , h1 [ class "site-title", onClick GoHome ] [ text "Elm Examples Hub" ]
             ]
         ]
@@ -108,7 +135,15 @@ viewHeader model =
 
 viewNav : Model -> Html Msg
 viewNav model =
-    nav [ class (if model.isNavOpen then "nav-open" else "nav-closed") ]
+    nav
+        [ class
+            (if model.isNavOpen then
+                "nav-open"
+
+             else
+                "nav-closed"
+            )
+        ]
         [ div [ class "nav-header" ] [ text "Modules" ]
         , ul [ class "module-list" ]
             (List.map (viewModuleItem model.currentModule) model.modules)
@@ -121,6 +156,7 @@ viewModuleItem currentModule module_ =
         [ class
             (if currentModule == Just module_.id then
                 "module-item selected"
+
              else
                 "module-item"
             )
@@ -140,7 +176,7 @@ viewContent model =
                     [ h2 [] [ text "Welcome to Elm Examples Hub" ]
                     , p [] [ text "Select a module from the navigation panel to explore different Elm applications." ]
                     , div [ class "featured-modules" ]
-                        (List.map viewFeaturedModule (List.take 3 model.modules))
+                        (List.map viewFeaturedModule model.modules)
                     ]
                 ]
 
@@ -171,10 +207,16 @@ viewModuleContent id model =
                 , p [] [ text module_.description ]
                 , if id == "counter" then
                     Html.map CounterMsg (Counter.view model.counterModel)
+
                   else if id == "todo" then
                     Html.map TodoMsg (Todo.view model.todoModel)
+
                   else if id == "calculator" then
                     Html.map CalculatorMsg (Calculator.view model.calculatorModel)
+
+                  else if id == "form" then
+                    Html.map FormMsg (Form.view model.formModel)
+
                   else
                     div [ class "module-placeholder" ]
                         [ p [] [ text "Module content will be loaded here." ]
@@ -187,7 +229,9 @@ viewModuleContent id model =
                 [ text "Module not found." ]
 
 
+
 -- MAIN
+
 
 main : Program () Model Msg
 main =

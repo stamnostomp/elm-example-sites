@@ -264,5 +264,11 @@ main =
         { init = \_ -> ( initialModel, Cmd.none )
         , update = update
         , view = view
-        , subscriptions = \_ -> Sub.none
+        , subscriptions = subscriptions
         }
+
+
+subscriptions : Model -> Sub Msg
+subscriptions model =
+    -- Map the Memory Game subscriptions to our app's Msg type
+    Sub.map MemoryGameMsg (MemoryGame.subscriptions model.memoryGameModel)

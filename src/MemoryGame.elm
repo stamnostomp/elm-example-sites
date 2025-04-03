@@ -1,12 +1,12 @@
-module MemoryGame exposing (Model, Msg, init, update, view)
+module MemoryGame exposing (Model, Msg, init, subscriptions, update, view)
 
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Process
 import Random
-import Random.List exposing (shuffle)
 import Task
+import Time
 
 
 
@@ -41,6 +41,8 @@ type alias Model =
     , moves : Int
     , matchedPairs : Int
     , totalPairs : Int
+    , elapsedTime : Int -- Time in seconds
+    , timerSubscription : Bool -- Whether the timer is active
     }
 
 
@@ -53,6 +55,8 @@ init =
     , moves = 0
     , matchedPairs = 0
     , totalPairs = 8 -- 8 pairs, 16 cards total
+    , elapsedTime = 0
+    , timerSubscription = False
     }
 
 
@@ -86,6 +90,42 @@ createDeck =
 
 
 
+-- Helper function to convert a list of generators into a generator of a list
+
+
+sequence : List (Random.Generator a) -> Random.Generator (List a)
+sequence generators =
+    List.foldr
+        (\generator accumulator ->
+            Random.map2 (::) generator accumulator
+        )
+        (Random.constant [])
+        generators
+
+
+
+-- Custom shuffle function using core Random
+
+
+shuffle : List a -> Random.Generator (List a)
+shuffle list =
+    let
+        -- Helper to create a generator for a tuple (random number, item)
+        helper : a -> Random.Generator ( Float, a )
+        helper item =
+            Random.map (\r -> ( r, item )) (Random.float 0 1)
+
+        -- Generate a list of tuples with random first elements
+        randomPairs : Random.Generator (List ( Float, a ))
+        randomPairs =
+            List.map helper list
+                |> sequence
+    in
+    -- Sort by the random values and extract the original items
+    Random.map (List.sortBy Tuple.first >> List.map Tuple.second) randomPairs
+
+
+
 -- UPDATE
 
 
@@ -96,13 +136,18 @@ type Msg
     | CheckMatch
     | HideUnmatched
     | ResetGame
+    | Tick Time.Posix -- New message for timer ticks
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         StartGame ->
-            ( { model | gameState = Playing }
+            ( { model
+                | gameState = Playing
+                , elapsedTime = 0
+                , timerSubscription = True
+              }
             , Random.generate ShuffleDeck (shuffle createDeck)
             )
 
@@ -174,6 +219,14 @@ update msg model =
 
                                 else
                                     Playing
+
+                            -- Stop the timer if game is completed
+                            timerSubscription =
+                                if newGameState == Completed then
+                                    False
+
+                                else
+                                    model.timerSubscription
                         in
                         ( { model
                             | cards = updatedCards
@@ -181,6 +234,7 @@ update msg model =
                             , secondSelection = Nothing
                             , matchedPairs = newMatchedPairs
                             , gameState = newGameState
+                            , timerSubscription = timerSubscription
                           }
                         , Cmd.none
                         )
@@ -218,9 +272,19 @@ update msg model =
                     ( model, Cmd.none )
 
         ResetGame ->
-            ( init
+            ( { init | timerSubscription = True, gameState = Playing }
             , Random.generate ShuffleDeck (shuffle createDeck)
             )
+
+        Tick _ ->
+            -- Only increment time if game is in Playing state
+            if model.gameState == Playing then
+                ( { model | elapsedTime = model.elapsedTime + 1 }
+                , Cmd.none
+                )
+
+            else
+                ( model, Cmd.none )
 
 
 
@@ -238,6 +302,42 @@ updateCardState id newState cards =
                 card
         )
         cards
+
+
+
+-- Format time from seconds to MM:SS
+
+
+formatTime : Int -> String
+formatTime totalSeconds =
+    let
+        minutes =
+            totalSeconds // 60
+
+        seconds =
+            modBy 60 totalSeconds
+
+        padWithZero num =
+            if num < 10 then
+                "0" ++ String.fromInt num
+
+            else
+                String.fromInt num
+    in
+    padWithZero minutes ++ ":" ++ padWithZero seconds
+
+
+
+-- SUBSCRIPTIONS
+
+
+subscriptions : Model -> Sub Msg
+subscriptions model =
+    if model.timerSubscription then
+        Time.every 1000 Tick
+
+    else
+        Sub.none
 
 
 
@@ -278,6 +378,10 @@ viewGameStats model =
             , span [ class "stat-value" ]
                 [ text (String.fromInt model.matchedPairs ++ " / " ++ String.fromInt model.totalPairs) ]
             ]
+        , div [ class "stat-item time" ]
+            [ span [ class "stat-label" ] [ text "Time: " ]
+            , span [ class "stat-value" ] [ text (formatTime model.elapsedTime) ]
+            ]
         ]
 
 
@@ -298,6 +402,7 @@ viewGameBoard model =
         div [ class "memory-game-completed" ]
             [ h3 [] [ text "Congratulations!" ]
             , p [] [ text ("You completed the game in " ++ String.fromInt model.moves ++ " moves!") ]
+            , p [] [ text ("Your time: " ++ formatTime model.elapsedTime) ]
             , button
                 [ class "play-again-button"
                 , onClick ResetGame
@@ -368,4 +473,5 @@ viewExplanation =
         , div [ class "explanation-item" ] [ text "• Update - Handles card selections, matching logic, and game progression" ]
         , div [ class "explanation-item" ] [ text "• View - Renders game board, cards, and interactive elements" ]
         , div [ class "explanation-item" ] [ text "• The game uses Task.perform and Process.sleep for timing card reveals" ]
+        , div [ class "explanation-item" ] [ text "• Time.every subscription tracks elapsed time during gameplay" ]
         ]

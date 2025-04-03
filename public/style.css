@@ -1130,3 +1130,22 @@ margin-bottom: 1rem;
   padding: 0.8rem 2rem;
   border-radius: 4px;
   font-weight: bold;
+
+
+/* Timer-specific styles to add to your CSS */
+.memory-game-stats .stat-item.time {
+  display: flex;
+  align-items: center;
+}
+
+.memory-game-stats .time .stat-value {
+  font-family: monospace;
+  font-size: 1.2rem;
+  color: var(--ev-bright-yellow);
+  min-width: 56px;
+  text-align: right;
+}
+
+.memory-game-completed p {
+  margin: 0.5rem 0;
+}

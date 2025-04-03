@@ -1,13 +1,19 @@
 module Main exposing (main)
 
 import Browser
+import Browser.Navigation as Nav
 import Calculator
 import Counter
 import Form
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
+import MemoryGame
+import Process
+import Random
+import Task
 import Todo
+import Url
 
 
 
@@ -29,6 +35,7 @@ type alias Model =
     , todoModel : Todo.Model
     , calculatorModel : Calculator.Model
     , formModel : Form.Model
+    , memoryGameModel : MemoryGame.Model
     }
 
 
@@ -53,11 +60,16 @@ initialModel =
           , name = "Registration Form"
           , description = " A form with validation demonstrating more complex state managment"
           }
+        , { id = "memory-game"
+          , name = "Memory Game"
+          , description = " A Fun memory Game with side effects and use of tasks"
+          }
         ]
     , counterModel = Counter.init
     , todoModel = Todo.init
     , calculatorModel = Calculator.init
     , formModel = Form.init
+    , memoryGameModel = MemoryGame.init
     }
 
 
@@ -73,31 +85,41 @@ type Msg
     | TodoMsg Todo.Msg
     | CalculatorMsg Calculator.Msg
     | FormMsg Form.Msg
+    | MemoryGameMsg MemoryGame.Msg
 
 
-update : Msg -> Model -> Model
+update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         SelectModule id ->
-            { model | currentModule = Just id }
+            ( { model | currentModule = Just id }, Cmd.none )
 
         ToggleNav ->
-            { model | isNavOpen = not model.isNavOpen }
+            ( { model | isNavOpen = not model.isNavOpen }, Cmd.none )
 
         GoHome ->
-            { model | currentModule = Nothing }
+            ( { model | currentModule = Nothing }, Cmd.none )
 
         CounterMsg counterMsg ->
-            { model | counterModel = Counter.update counterMsg model.counterModel }
+            ( { model | counterModel = Counter.update counterMsg model.counterModel }, Cmd.none )
 
         TodoMsg todoMsg ->
-            { model | todoModel = Todo.update todoMsg model.todoModel }
+            ( { model | todoModel = Todo.update todoMsg model.todoModel }, Cmd.none )
 
         CalculatorMsg calculatorMsg ->
-            { model | calculatorModel = Calculator.update calculatorMsg model.calculatorModel }
+            ( { model | calculatorModel = Calculator.update calculatorMsg model.calculatorModel }, Cmd.none )
 
         FormMsg formMsg ->
-            { model | formModel = Form.update formMsg model.formModel }
+            ( { model | formModel = Form.update formMsg model.formModel }, Cmd.none )
+
+        MemoryGameMsg memoryGameMsg ->
+            let
+                ( updatedGameModel, gameCmd ) =
+                    MemoryGame.update memoryGameMsg model.memoryGameModel
+            in
+            ( { model | memoryGameModel = updatedGameModel }
+            , Cmd.map MemoryGameMsg gameCmd
+            )
 
 
 
@@ -217,6 +239,9 @@ viewModuleContent id model =
                   else if id == "form" then
                     Html.map FormMsg (Form.view model.formModel)
 
+                  else if id == "memory-game" then
+                    Html.map MemoryGameMsg (MemoryGame.view model.memoryGameModel)
+
                   else
                     div [ class "module-placeholder" ]
                         [ p [] [ text "Module content will be loaded here." ]
@@ -235,8 +260,9 @@ viewModuleContent id model =
 
 main : Program () Model Msg
 main =
-    Browser.sandbox
-        { init = initialModel
+    Browser.element
+        { init = \_ -> ( initialModel, Cmd.none )
         , update = update
         , view = view
+        , subscriptions = \_ -> Sub.none
         }

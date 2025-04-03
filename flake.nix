@@ -1,5 +1,5 @@
 {
-  description = "Elm Examples Hub with sandbox-compatible builds";
+  description = "Elm Examples Hub with WebSocket Chat Server";
 
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs?ref=nixos-unstable";
@@ -49,6 +49,48 @@
             --pushstate \
             --hot \
             -- --output=elm.js --debug
+        '';
+
+        # Build the Haskell WebSocket Chat Server
+        chatServer = pkgs.haskellPackages.developPackage {
+          root = ./src/chat;
+          name = "elm-chat-server";
+          modifier = drv:
+            pkgs.haskell.lib.overrideCabal drv (oldAttrs: {
+              buildTools = (oldAttrs.buildTools or []) ++ [
+                pkgs.haskellPackages.cabal-install
+              ];
+              enableLibraryProfiling = false;
+              enableExecutableProfiling = false;
+              doHaddock = false;
+              doCheck = false;
+              doBenchmark = false;
+            });
+        };
+
+        # Script to run both the Elm app and chat server
+        runBothScript = pkgs.writeShellScriptBin "run-elm-with-chat" ''
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          echo "Starting Elm WebSocket Chat Server and Elm App"
+          echo "================================================"
+
+          # Start the Haskell chat server in the background
+          echo "Starting Chat Server on port 9160..."
+          ${chatServer}/bin/elm-chat-server &
+          CHAT_SERVER_PID=$!
+
+          # Give it a moment to start
+          sleep 1
+
+          # Start the Elm development server
+          echo "Starting Elm development server..."
+          ${elmLiveCommand}/bin/elm-dev
+
+          # When elm-dev is terminated, also kill the chat server
+          kill $CHAT_SERVER_PID
+          echo "Both servers have been stopped."
         '';
 
         elmApp = pkgs.stdenv.mkDerivation {
@@ -161,30 +203,58 @@
             nodejs
             elmLiveCommand
             elmPrebuilderScript  # Include our prebuilder script
+
+            # Haskell development tools
+            haskellPackages.cabal-install
+            haskellPackages.ghc
+            haskellPackages.haskell-language-server
+
+            # Combined run script
+            runBothScript
           ];
 
           shellHook = ''
-            echo "Elm development environment loaded!"
+            echo "Elm Examples Hub development environment loaded!"
             echo ""
             echo "Available commands:"
-            echo "  elm-dev     - Start elm live dev server"
-            echo "  prebuild-elm - Create a prebuilt elm.js file for use with nix build"
+            echo "  elm-dev            - Start elm live dev server"
+            echo "  prebuild-elm       - Create a prebuilt elm.js file for use with nix build"
+            echo "  run-elm-with-chat  - Run both the Elm app and the WebSocket chat server"
             echo ""
             echo "To create a production build:"
             echo "  1. Run 'prebuild-elm' to create the optimized JavaScript file"
-            echo "  2. Run 'nix build' to create the full application"
+            echo "  2. Run a) 'nix build .#app' to build just the Elm app"
+            echo "        b) 'nix build .#chatServer' to build just the WebSocket server"
+            echo "        c) 'nix build' to build both"
             echo ""
           '';
         };
 
       in
       {
-        packages.default = elmApp;
+        packages = {
+          default = elmApp;
+          app = elmApp;
+          chatServer = chatServer;
+        };
+
         devShells.default = devShell;
 
-        apps.default = {
-          type = "app";
-          program = "${elmApp}/bin/elm-app";
+        apps = {
+          default = {
+            type = "app";
+            program = "${elmApp}/bin/elm-app";
+          };
+
+          chatServer = {
+            type = "app";
+            program = "${chatServer}/bin/elm-chat-server";
+          };
+
+          combined = {
+            type = "app";
+            program = "${runBothScript}/bin/run-elm-with-chat";
+          };
         };
       }
     );

@@ -1,8 +1,11 @@
 module Main exposing (main)
 
+-- Direct import with alias
+
 import Browser
 import Browser.Navigation as Nav
 import Calculator
+import Chat.Client as Chat
 import Counter
 import Form
 import Html exposing (..)
@@ -36,6 +39,7 @@ type alias Model =
     , calculatorModel : Calculator.Model
     , formModel : Form.Model
     , memoryGameModel : MemoryGame.Model
+    , chatModel : Chat.Model -- No change needed here since we use the alias
     }
 
 
@@ -64,12 +68,17 @@ initialModel =
           , name = "Memory Game"
           , description = " A Fun memory Game with side effects and use of tasks"
           }
+        , { id = "chat"
+          , name = "WebSocket Chat"
+          , description = "A real-time chat application using WebSockets with Haskell backend"
+          }
         ]
     , counterModel = Counter.init
     , todoModel = Todo.init
     , calculatorModel = Calculator.init
     , formModel = Form.init
     , memoryGameModel = MemoryGame.init
+    , chatModel = Chat.init
     }
 
 
@@ -86,6 +95,7 @@ type Msg
     | CalculatorMsg Calculator.Msg
     | FormMsg Form.Msg
     | MemoryGameMsg MemoryGame.Msg
+    | ChatMsg Chat.Msg
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -120,6 +130,33 @@ update msg model =
             ( { model | memoryGameModel = updatedGameModel }
             , Cmd.map MemoryGameMsg gameCmd
             )
+
+        ChatMsg chatMsg ->
+            let
+                ( updatedChatModel, chatCmd ) =
+                    Chat.update chatMsg model.chatModel
+            in
+            ( { model | chatModel = updatedChatModel }
+            , Cmd.map ChatMsg chatCmd
+            )
+
+
+
+-- SUBSCRIPTIONS
+
+
+subscriptions : Model -> Sub Msg
+subscriptions model =
+    case model.currentModule of
+        Just "chat" ->
+            Sub.map ChatMsg (Chat.subscriptions model.chatModel)
+
+        Just "memory-game" ->
+            Sub.map MemoryGameMsg Sub.none
+
+        -- MemoryGame might have subscriptions in the future
+        _ ->
+            Sub.none
 
 
 
@@ -242,6 +279,9 @@ viewModuleContent id model =
                   else if id == "memory-game" then
                     Html.map MemoryGameMsg (MemoryGame.view model.memoryGameModel)
 
+                  else if id == "chat" then
+                    Html.map ChatMsg (Chat.view model.chatModel)
+
                   else
                     div [ class "module-placeholder" ]
                         [ p [] [ text "Module content will be loaded here." ]
@@ -266,9 +306,3 @@ main =
         , view = view
         , subscriptions = subscriptions
         }
-
-
-subscriptions : Model -> Sub Msg
-subscriptions model =
-    -- Map the Memory Game subscriptions to our app's Msg type
-    Sub.map MemoryGameMsg (MemoryGame.subscriptions model.memoryGameModel)

@@ -1,63 +1,35 @@
 # Elm Examples Hub
 
-A collection of interactive Elm example applications demonstrating the Elm architecture and various UI components.
+[View Live Demo](https://stamnostomp.github.io/elm-example-sites/)
 
-## Live Demo
+A collection of small Elm applications I've built while learning the Elm language and architecture.
 
-**[View the live application](https://stamnostomp.github.io/elm-example-sites/)**
+## What I'm Learning
 
-Explore the working examples directly in your browser without installation.
+This project demonstrates different aspects of Elm through simple examples:
 
-## Examples Included
+- **Counter**: Basic state management with simple increment/decrement
+- **Todo List**: Managing lists of data with filtering and user input
+- **Calculator**: More complex state logic and operations
+- **Registration Form**: Form validation and feedback
+- **Memory Game**: Side effects, randomization, and delayed operations
 
-- **Counter**: A simple counter demonstrating basic Elm architecture
-- **Todo List**: A task management application with filtering and editing capabilities
-- **Calculator**: A basic calculator with arithmetic operations
+## How It Works
 
-## Development
+The `Main.elm` file serves as the coordinator for all modules, allowing you to select and load different examples. It maintains a list of available modules and handles navigation between them, demonstrating how to compose Elm applications from smaller components.
 
-This project uses Nix flakes for reproducible development environments and builds.
+## Future Plans
 
-### Prerequisites
+As I continue learning, I plan to add:
+- GraphQL integration examples
+- SVG animations and visualizations
+- WebSocket communication
+- Single page application with routing
+- Unit and fuzz testing examples
 
-- [Nix](https://nixos.org/download.html) with flakes enabled
+## Key Elm Concepts
 
-### Local Development
-
-```bash
-# Enter the development shell with all needed dependencies
-nix develop
-
-# Start the development server
-elm-dev
-```
-
-The application will be available at http://localhost:8000.
-
-### Building for Production
-
-```bash
-# Build the optimized application
-nix build
-```
-
-The built application will be in `result/share/elm-app/`.
-
-## Deployment
-
-This project is configured for automatic deployment to GitHub Pages when changes are pushed to the main branch. You can view the deployed application at:
-
-https://stamnostomp.github.io/elm-example-sites/
-
-### Manual Deployment
-
-You can also trigger a deployment manually:
-
-1. Go to the GitHub repository
-2. Navigate to the "Actions" tab
-3. Select the "Deploy Elm Application" workflow
-4. Click "Run workflow"
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
+- The Elm Architecture (Model, Update, View)
+- Immutable data and type safety
+- Pure functions and predictable state management
+- Commands for managing side effects

@@ -6,10 +6,12 @@ module Main where
 import Control.Concurrent (MVar, newMVar, modifyMVar_, modifyMVar, readMVar)
 import Control.Exception (finally)
 import Control.Monad (forM_, forever)
-import Data.Aeson (FromJSON, ToJSON, decode, encode)
+import Data.Aeson (FromJSON, ToJSON, decode, encode, Value(..))
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
+import qualified Data.Text.Lazy as TL
+import qualified Data.Text.Lazy.Encoding as TL
 import qualified Network.WebSockets as WS
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -17,6 +19,7 @@ import GHC.Generics (Generic)
 import Data.Time.Clock.POSIX (getPOSIXTime)
 import System.Environment (getArgs)
 import System.IO (stdout, hSetBuffering, BufferMode(LineBuffering))
+import qualified Data.ByteString.Lazy as BL
 
 -- Types for our chat messages
 data Client = Client
@@ -29,9 +32,6 @@ data ServerState = ServerState
   { nextId :: Int
   , clients :: Map Int Client
   }
-
-data MessageType = JoinMsg | ChatMsg | RenameMsg | UsersListMsg
-  deriving (Show, Eq)
 
 data ChatMessage = ChatMessage
   { msgType :: Text
@@ -67,6 +67,10 @@ instance FromJSON RenameMessage
 instance ToJSON UsersListMessage
 instance FromJSON UsersListMessage
 
+-- Helper function to convert ByteString to Text
+encodeLazyByteStringToText :: ToJSON a => a -> Text
+encodeLazyByteStringToText = TL.toStrict . TL.decodeUtf8 . encode
+
 -- Initialize an empty server state
 newServerState :: ServerState
 newServerState = ServerState 0 Map.empty
@@ -74,10 +78,6 @@ newServerState = ServerState 0 Map.empty
 -- Get the number of active clients
 numClients :: ServerState -> Int
 numClients = Map.size . clients
-
--- Check if a username is already taken
-isUsernameTaken :: Text -> ServerState -> Bool
-isUsernameTaken name state = name `elem` map clientName (Map.elems (clients state))
 
 -- Add a client to the server state
 addClient :: Client -> ServerState -> ServerState
@@ -111,22 +111,36 @@ broadcastUsers :: MVar ServerState -> IO ()
 broadcastUsers stateRef = do
   state <- readMVar stateRef
   let usernames = map clientName (Map.elems (clients state))
-      usersMsg = encode $ UsersListMessage usernames
+      usersMsg = encodeLazyByteStringToText $ UsersListMessage usernames
   broadcast usersMsg stateRef
 
--- Chat application
-chat :: WS.ServerApp
-chat pendingConn = do
-  conn <- WS.acceptRequest pendingConn
+-- Main application
+main :: IO ()
+main = do
+  hSetBuffering stdout LineBuffering
+  args <- getArgs
+  let port = if null args then 9160 else read (head args)
+
+  -- Create shared state
+  state <- newMVar newServerState
+
+  T.putStrLn $ "Chat server starting on port " <> T.pack (show port)
+
+  -- Run the WebSocket server
+  WS.runServer "0.0.0.0" port (chatApp state)
+
+-- Chat application with shared state
+chatApp :: MVar ServerState -> WS.ServerApp
+chatApp stateRef pending = do
+  conn <- WS.acceptRequest pending
   WS.withPingThread conn 30 (return ()) $ do
 
     -- Wait for the join message with the username
     msg <- WS.receiveData conn
     case decode msg of
-      Just joinMsg@(JoinMessage "join" name) -> do
+      Just (JoinMessage "join" name) -> do
         -- Create a new client and add it to the server state
-        stateRef <- WS.getConnectionData "state" conn
-        newUserId <- modifyMVar stateRef $ \state -> do
+        userId <- modifyMVar stateRef $ \state -> do
           let newId = nextId state
               newClient = Client newId name conn
               newState = addClient newClient state
@@ -136,11 +150,11 @@ chat pendingConn = do
           -- Create and send welcome message
           currTime <- round <$> getPOSIXTime
           let welcomeMsg = ChatMessage "message" "Server" ("Welcome, " <> name <> "!") currTime
-          sendMessage newClient (encode welcomeMsg)
+          sendMessage newClient (encodeLazyByteStringToText welcomeMsg)
 
           -- Broadcast user join notification
           let joinNotification = ChatMessage "message" "Server" (name <> " has joined the chat") currTime
-          broadcast (encode joinNotification) stateRef
+          broadcast (encodeLazyByteStringToText joinNotification) stateRef
 
           -- Send updated users list to all clients
           broadcastUsers stateRef
@@ -148,88 +162,76 @@ chat pendingConn = do
           return (newState, newId)
 
         -- Set up handler for when client disconnects
-        flip finally (disconnect newUserId) $ forever $ do
+        flip finally (disconnect userId stateRef) $ forever $ do
           -- Process incoming messages
           msg <- WS.receiveData conn
-          handleMessage msg newUserId stateRef
+          handleMessage msg userId stateRef conn
 
       _ -> do
         -- Invalid first message, disconnect
         T.putStrLn "Client sent invalid join message, disconnecting"
         WS.sendTextData conn ("Invalid join message" :: Text)
         return ()
-  where
-    disconnect clientId = do
-      stateRef <- WS.getConnectionData "state" pendingConn
-      modifyMVar_ stateRef $ \state -> do
-        case Map.lookup clientId (clients state) of
-          Nothing -> return state
-          Just client -> do
-            T.putStrLn $ "Client disconnected: " <> clientName client <> " (ID: " <> T.pack (show clientId) <> ")"
 
-            -- Broadcast disconnect notification
-            currTime <- round <$> getPOSIXTime
-            let disconnectMsg = ChatMessage "message" "Server" (clientName client <> " has left the chat") currTime
-            broadcast (encode disconnectMsg) stateRef
+-- Handle client disconnect
+disconnect :: Int -> MVar ServerState -> IO ()
+disconnect clientId stateRef = do
+  modifyMVar_ stateRef $ \state -> do
+    case Map.lookup clientId (clients state) of
+      Nothing -> return state
+      Just client -> do
+        T.putStrLn $ "Client disconnected: " <> clientName client <> " (ID: " <> T.pack (show clientId) <> ")"
 
-            -- Return updated state
-            let newState = removeClient clientId state
-
-            -- Send updated users list
-            broadcastUsers stateRef
-
-            return newState
-
--- Handle different message types
-handleMessage :: Text -> Int -> MVar ServerState -> IO ()
-handleMessage msgText clientId stateRef = do
-  -- Try to decode as a chat message
-  case decode msgText of
-    Just (ChatMessage "message" sender content _) -> do
-      state <- readMVar stateRef
-      case Map.lookup clientId (clients state) of
-        Just client -> do
-          currTime <- round <$> getPOSIXTime
-          let fullMsg = ChatMessage "message" sender content currTime
-          broadcast (encode fullMsg) stateRef
-          T.putStrLn $ "[Chat] " <> sender <> ": " <> content
-
-        Nothing ->
-          T.putStrLn $ "Unknown client ID: " <> T.pack (show clientId)
-
-    -- Try to decode as a rename message
-    Just (RenameMessage "rename" oldName newName) -> do
-      modifyMVar_ stateRef $ \state -> do
-        T.putStrLn $ "User rename: " <> oldName <> " -> " <> newName
-
-        -- Update the client name
-        let newState = updateClientName clientId newName state
-
-        -- Broadcast rename notification
+        -- Broadcast disconnect notification
         currTime <- round <$> getPOSIXTime
-        let renameMsg = ChatMessage "message" "Server" (oldName <> " is now known as " <> newName) currTime
-        broadcast (encode renameMsg) stateRef
+        let disconnectMsg = ChatMessage "message" "Server" (clientName client <> " has left the chat") currTime
+        broadcast (encodeLazyByteStringToText disconnectMsg) stateRef
+
+        -- Return updated state
+        let newState = removeClient clientId state
 
         -- Send updated users list
         broadcastUsers stateRef
 
         return newState
 
-    -- Unknown message type
-    _ -> T.putStrLn $ "Unknown message format: " <> msgText
+-- Handle different message types without complex JSON parsing
+handleMessage :: Text -> Int -> MVar ServerState -> WS.Connection -> IO ()
+handleMessage msgText clientId stateRef conn = do
+  -- Get client from state
+  state <- readMVar stateRef
+  case Map.lookup clientId (clients state) of
+    Nothing -> T.putStrLn $ "Unknown client ID: " <> T.pack (show clientId)
+    Just client -> do
+      -- Try to decode as different message types directly
+      let bs = WS.toLazyByteString msgText
 
-main :: IO ()
-main = do
-  hSetBuffering stdout LineBuffering
-  args <- getArgs
-  let port = if null args then 9160 else read (head args)
+      -- Try as a chat message first
+      case decode bs of
+        Just (ChatMessage "message" senderName content _) -> do
+          currTime <- round <$> getPOSIXTime
+          let fullMsg = ChatMessage "message" senderName content currTime
+          broadcast (encodeLazyByteStringToText fullMsg) stateRef
+          T.putStrLn $ "[Chat] " <> senderName <> ": " <> content
 
-  -- Create state
-  state <- newMVar newServerState
+        -- If not a chat message, try as a rename message
+        _ -> case decode bs of
+               Just (RenameMessage "rename" oldName newName) -> do
+                 modifyMVar_ stateRef $ \s -> do
+                   T.putStrLn $ "User rename: " <> oldName <> " -> " <> newName
 
-  T.putStrLn $ "Chat server starting on port " <> T.pack (show port)
+                   -- Update the client name
+                   let newState = updateClientName clientId newName s
 
-  -- Run the WebSocket server
-  WS.runServerWith "0.0.0.0" port $ \pending -> do
-    WS.setConnectionData "state" state pending
-    chat pending
+                   -- Broadcast rename notification
+                   currTime <- round <$> getPOSIXTime
+                   let renameMsg = ChatMessage "message" "Server" (oldName <> " is now known as " <> newName) currTime
+                   broadcast (encodeLazyByteStringToText renameMsg) stateRef
+
+                   -- Send updated users list
+                   broadcastUsers stateRef
+
+                   return newState
+
+               -- Unknown message format
+               _ -> T.putStrLn $ "Unknown or invalid message: " <> msgText

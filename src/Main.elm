@@ -1,9 +1,6 @@
 port module Main exposing (main)
 
--- Direct import with alias
-
 import Browser
-import Browser.Navigation as Nav
 import Calculator
 import Chat.Client as Chat
 import Counter
@@ -14,8 +11,6 @@ import Html.Events exposing (..)
 import Json.Decode as Decode
 import Json.Encode as Encode
 import MemoryGame
-import PortFunnel as Funnel
-import PortFunnel.WebSocket as WebSocket
 import Process
 import Random
 import Task
@@ -25,13 +20,25 @@ import Url
 
 
 -- PORTS
--- These ports allow communication with JavaScript
+-- These ports correspond to those in Chat.Client
 
 
-port cmdPort : Encode.Value -> Cmd msg
+port sendWebSocketMessage : { url : String, message : String } -> Cmd msg
 
 
-port subPort : (Encode.Value -> msg) -> Sub msg
+port receiveWebSocketMessage : (String -> msg) -> Sub msg
+
+
+port connectWebSocket : String -> Cmd msg
+
+
+port webSocketConnected : (() -> msg) -> Sub msg
+
+
+port webSocketDisconnected : (String -> msg) -> Sub msg
+
+
+port webSocketError : (String -> msg) -> Sub msg
 
 
 
@@ -111,7 +118,6 @@ type Msg
     | FormMsg Form.Msg
     | MemoryGameMsg MemoryGame.Msg
     | ChatMsg Chat.Msg
-    | ProcessPortMessage Encode.Value
     | NoOp
 
 
@@ -150,34 +156,12 @@ update msg model =
 
         ChatMsg chatMsg ->
             let
-                ( updatedChatModel, chatCmd, outMsg ) =
+                ( updatedChatModel, chatCmd ) =
                     Chat.update chatMsg model.chatModel
-
-                -- Process any outgoing WebSocket messages
-                cmdFromOutMsg =
-                    case outMsg of
-                        Chat.NoOutMsg ->
-                            Cmd.none
-
-                        Chat.SendWSMessage funnelMsg ->
-                            Funnel.sendToApp cmdPort funnelMsg
             in
             ( { model | chatModel = updatedChatModel }
-            , Cmd.batch [ Cmd.map ChatMsg chatCmd, cmdFromOutMsg ]
+            , Cmd.map ChatMsg chatCmd
             )
-
-        ProcessPortMessage value ->
-            -- Handle incoming port messages
-            if model.currentModule == Just "chat" then
-                case WebSocket.decodeResponse value of
-                    Ok wsResponse ->
-                        update (ChatMsg (Chat.ReceiveWSMessage wsResponse)) model
-
-                    Err _ ->
-                        ( model, Cmd.none )
-
-            else
-                ( model, Cmd.none )
 
         NoOp ->
             ( model, Cmd.none )
@@ -194,11 +178,11 @@ subscriptions model =
             Just "memory-game" ->
                 Sub.map MemoryGameMsg (MemoryGame.subscriptions model.memoryGameModel)
 
+            Just "chat" ->
+                Sub.map ChatMsg (Chat.subscriptions model.chatModel)
+
             _ ->
                 Sub.none
-
-        -- Listen for incoming port messages (WebSocket responses)
-        , subPort ProcessPortMessage
         ]
 
 

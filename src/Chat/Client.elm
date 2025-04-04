@@ -1,6 +1,4 @@
-module Chat.Client exposing (Model, Msg(..), OutMsg(..), init, subscriptions, update, view)
-
--- PortFunnel imports
+port module Chat.Client exposing (Model, Msg(..), init, subscriptions, update, view)
 
 import Dict exposing (Dict)
 import Html exposing (..)
@@ -8,11 +6,41 @@ import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Json.Decode as Decode
 import Json.Encode as Encode
-import PortFunnel as Funnel
-import PortFunnel.WebSocket as WebSocket
 import Process
 import Task
 import Time
+
+
+
+-- PORTS
+-- These ports will be connected in Main.elm to JavaScript handlers
+-- Send WebSocket messages to JavaScript
+
+
+port sendWebSocketMessage : { url : String, message : String } -> Cmd msg
+
+
+
+-- Receive WebSocket messages from JavaScript
+
+
+port receiveWebSocketMessage : (String -> msg) -> Sub msg
+
+
+
+-- WebSocket connection management
+
+
+port connectWebSocket : String -> Cmd msg
+
+
+port webSocketConnected : (() -> msg) -> Sub msg
+
+
+port webSocketDisconnected : (String -> msg) -> Sub msg
+
+
+port webSocketError : (String -> msg) -> Sub msg
 
 
 
@@ -56,124 +84,30 @@ init =
 
 
 -- UPDATE
--- Outgoing messages that Main.elm will process
-
-
-type OutMsg
-    = NoOutMsg
-    | SendWSMessage Funnel.GenericMessage
-
-
-
--- Incoming WebSocket messages and user actions
 
 
 type Msg
     = Connect
-    | ReceiveWSMessage WebSocket.Response
+    | SendMessage
     | UpdateMessage String
     | UpdateUsername String
-    | SendMessage
+    | MessageReceived String
+    | ConnectionEstablished
+    | ConnectionClosed String
+    | ConnectionError String
     | NoOp
 
 
-
--- Update returns a tuple of (Model, Cmd Msg, OutMsg)
--- The OutMsg tells Main.elm if we need to send a WebSocket message
-
-
-update : Msg -> Model -> ( Model, Cmd Msg, OutMsg )
+update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         Connect ->
-            -- Create a WebSocket open message
-            let
-                message =
-                    WebSocket.makeOpen model.serverUrl
-            in
+            -- Create a WebSocket connection
             ( { model | connectionStatus = Connecting }
-            , Cmd.none
-            , SendWSMessage message
-              -- Return the message to be sent through the port
+            , connectWebSocket model.serverUrl
             )
 
-        ReceiveWSMessage response ->
-            -- Handle incoming WebSocket messages
-            let
-                ( newModel, cmd ) =
-                    handleWebSocketResponse response model
-            in
-            ( newModel, cmd, NoOutMsg )
-
-        UpdateMessage message ->
-            ( { model | currentMessage = message }
-            , Cmd.none
-            , NoOutMsg
-            )
-
-        UpdateUsername username ->
-            let
-                outMsg =
-                    if model.connectionStatus == Connected then
-                        let
-                            nameChangeMessage =
-                                Encode.object
-                                    [ ( "type", Encode.string "rename" )
-                                    , ( "oldName", Encode.string model.username )
-                                    , ( "newName", Encode.string username )
-                                    ]
-                                    |> Encode.encode 0
-
-                            sendMessage =
-                                WebSocket.makeSend model.serverUrl nameChangeMessage
-                        in
-                        SendWSMessage sendMessage
-
-                    else
-                        NoOutMsg
-            in
-            ( { model | username = username }
-            , Cmd.none
-            , outMsg
-            )
-
-        SendMessage ->
-            if String.trim model.currentMessage == "" then
-                ( model, Cmd.none, NoOutMsg )
-
-            else if model.connectionStatus /= Connected then
-                ( model, Cmd.none, NoOutMsg )
-
-            else
-                let
-                    chatMessage =
-                        Encode.object
-                            [ ( "type", Encode.string "message" )
-                            , ( "sender", Encode.string model.username )
-                            , ( "content", Encode.string model.currentMessage )
-                            ]
-                            |> Encode.encode 0
-
-                    sendMessage =
-                        WebSocket.makeSend model.serverUrl chatMessage
-                in
-                ( { model | currentMessage = "" }
-                , Cmd.none
-                , SendWSMessage sendMessage
-                )
-
-        NoOp ->
-            ( model, Cmd.none, NoOutMsg )
-
-
-
--- Helper function to handle WebSocket responses
-
-
-handleWebSocketResponse : WebSocket.Response -> Model -> ( Model, Cmd Msg )
-handleWebSocketResponse response model =
-    case response of
-        WebSocket.OpenResponse { url } ->
+        ConnectionEstablished ->
             -- Connection established, send join message
             let
                 joinMessage =
@@ -182,18 +116,23 @@ handleWebSocketResponse response model =
                         , ( "username", Encode.string model.username )
                         ]
                         |> Encode.encode 0
-
-                -- We can't send the message directly from here,
-                -- so we'll delay it slightly to let the Main module handle it
-                delayedSend =
-                    Process.sleep 100
-                        |> Task.perform (\_ -> SendMessage)
             in
             ( { model | connectionStatus = Connected }
+            , sendWebSocketMessage
+                { url = model.serverUrl, message = joinMessage }
+            )
+
+        ConnectionClosed reason ->
+            ( { model | connectionStatus = Disconnected }
             , Cmd.none
             )
 
-        WebSocket.MessageResponse { message } ->
+        ConnectionError error ->
+            ( { model | connectionStatus = Failed error }
+            , Cmd.none
+            )
+
+        MessageReceived message ->
             -- Process received message
             if String.startsWith "{\"users\":" message then
                 -- Users list message
@@ -209,25 +148,65 @@ handleWebSocketResponse response model =
             else
                 -- Chat message
                 case Decode.decodeString messageDecoder message of
-                    Ok msg ->
-                        ( { model | messages = model.messages ++ [ msg ] }
+                    Ok decodedMessage ->
+                        ( { model | messages = model.messages ++ [ decodedMessage ] }
                         , Cmd.none
                         )
 
                     Err _ ->
                         ( model, Cmd.none )
 
-        WebSocket.ClosedResponse { code, wasClean, expected } ->
-            ( { model | connectionStatus = Disconnected }
+        UpdateMessage message ->
+            ( { model | currentMessage = message }
             , Cmd.none
             )
 
-        WebSocket.ErrorResponse { error } ->
-            ( { model | connectionStatus = Failed error }
-            , Cmd.none
+        UpdateUsername username ->
+            let
+                cmd =
+                    if model.connectionStatus == Connected then
+                        let
+                            nameChangeMessage =
+                                Encode.object
+                                    [ ( "type", Encode.string "rename" )
+                                    , ( "oldName", Encode.string model.username )
+                                    , ( "newName", Encode.string username )
+                                    ]
+                                    |> Encode.encode 0
+                        in
+                        sendWebSocketMessage
+                            { url = model.serverUrl, message = nameChangeMessage }
+
+                    else
+                        Cmd.none
+            in
+            ( { model | username = username }
+            , cmd
             )
 
-        _ ->
+        SendMessage ->
+            if String.trim model.currentMessage == "" then
+                ( model, Cmd.none )
+
+            else if model.connectionStatus /= Connected then
+                ( model, Cmd.none )
+
+            else
+                let
+                    chatMessage =
+                        Encode.object
+                            [ ( "type", Encode.string "message" )
+                            , ( "sender", Encode.string model.username )
+                            , ( "content", Encode.string model.currentMessage )
+                            ]
+                            |> Encode.encode 0
+                in
+                ( { model | currentMessage = "" }
+                , sendWebSocketMessage
+                    { url = model.serverUrl, message = chatMessage }
+                )
+
+        NoOp ->
             ( model, Cmd.none )
 
 
@@ -237,8 +216,12 @@ handleWebSocketResponse response model =
 
 subscriptions : Model -> Sub Msg
 subscriptions _ =
-    -- In our architecture, Main.elm forwards WebSocket messages to us
-    Sub.none
+    Sub.batch
+        [ receiveWebSocketMessage MessageReceived
+        , webSocketConnected (\_ -> ConnectionEstablished)
+        , webSocketDisconnected ConnectionClosed
+        , webSocketError ConnectionError
+        ]
 
 
 
@@ -425,11 +408,11 @@ viewExplanation =
         , div [ class "explanation-item" ]
             [ text "• Model - Tracks messages, users, and connection state" ]
         , div [ class "explanation-item" ]
-            [ text "• WebSockets - Establishes a persistent connection with the Haskell server" ]
+            [ text "• WebSockets - Uses Elm ports to communicate with JavaScript for WebSocket operations" ]
         , div [ class "explanation-item" ]
             [ text "• JSON - Used for structured communication between client and server" ]
         , div [ class "explanation-item" ]
-            [ text "• Elm subscriptions - Handles asynchronous WebSocket events" ]
+            [ text "• Elm subscriptions - Receives updates when WebSocket events occur" ]
         , div [ class "explanation-item" ]
             [ text "• Haskell backend - Manages connections and broadcasts messages" ]
         ]

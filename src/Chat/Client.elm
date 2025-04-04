@@ -1,4 +1,6 @@
-module Chat.Client exposing (Model, Msg, init, subscriptions, update, view)
+module Chat.Client exposing (Model, Msg(..), OutMsg(..), init, subscriptions, update, view)
+
+-- PortFunnel imports
 
 import Dict exposing (Dict)
 import Html exposing (..)
@@ -6,11 +8,11 @@ import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Json.Decode as Decode
 import Json.Encode as Encode
+import PortFunnel as Funnel
+import PortFunnel.WebSocket as WebSocket
 import Process
 import Task
 import Time
-import WebSocketClient as WSC
-import WebSocketClient.Message as WSM
 
 
 
@@ -38,8 +40,6 @@ type alias Model =
     , connectionStatus : ConnectionStatus
     , users : List String
     , serverUrl : String
-    , wsClient : WSC.Model Msg
-    , nextId : Int
     }
 
 
@@ -51,134 +51,69 @@ init =
     , connectionStatus = Disconnected
     , users = []
     , serverUrl = "ws://localhost:9160/chat"
-    , wsClient = WSC.init
-    , nextId = 0
     }
 
 
 
 -- UPDATE
+-- Outgoing messages that Main.elm will process
+
+
+type OutMsg
+    = NoOutMsg
+    | SendWSMessage Funnel.GenericMessage
+
+
+
+-- Incoming WebSocket messages and user actions
 
 
 type Msg
     = Connect
-    | WsConnect (Result String ())
-    | WsConnected
-    | WsDisconnected
-    | WsError String
-    | WsReceived String
-    | WsClientMsg (WSC.Message Msg)
+    | ReceiveWSMessage WebSocket.Response
     | UpdateMessage String
     | UpdateUsername String
     | SendMessage
     | NoOp
 
 
-update : Msg -> Model -> ( Model, Cmd Msg )
+
+-- Update returns a tuple of (Model, Cmd Msg, OutMsg)
+-- The OutMsg tells Main.elm if we need to send a WebSocket message
+
+
+update : Msg -> Model -> ( Model, Cmd Msg, OutMsg )
 update msg model =
     case msg of
         Connect ->
+            -- Create a WebSocket open message
             let
-                ( wsClient, cmd ) =
-                    WSC.makeOpenWithKey model.serverUrl model.nextId WsClientMsg
+                message =
+                    WebSocket.makeOpen model.serverUrl
             in
-            ( { model
-                | connectionStatus = Connecting
-                , nextId = model.nextId + 1
-                , wsClient = wsClient
-              }
-            , cmd
+            ( { model | connectionStatus = Connecting }
+            , Cmd.none
+            , SendWSMessage message
+              -- Return the message to be sent through the port
             )
 
-        WsConnect result ->
-            case result of
-                Ok _ ->
-                    ( model, Cmd.none )
-
-                Err error ->
-                    ( { model | connectionStatus = Failed error }
-                    , Cmd.none
-                    )
-
-        WsConnected ->
+        ReceiveWSMessage response ->
+            -- Handle incoming WebSocket messages
             let
-                joinMessage =
-                    Encode.object
-                        [ ( "type", Encode.string "join" )
-                        , ( "username", Encode.string model.username )
-                        ]
-                        |> Encode.encode 0
-
-                ( wsClient, cmd ) =
-                    WSC.send joinMessage model.wsClient
+                ( newModel, cmd ) =
+                    handleWebSocketResponse response model
             in
-            ( { model
-                | connectionStatus = Connected
-                , wsClient = wsClient
-              }
-            , cmd
-            )
-
-        WsDisconnected ->
-            ( { model | connectionStatus = Disconnected }
-            , Cmd.none
-            )
-
-        WsError errorMsg ->
-            ( { model | connectionStatus = Failed errorMsg }
-            , Cmd.none
-            )
-
-        WsReceived messageText ->
-            -- Handle different message types
-            if String.startsWith "{\"users\":" messageText then
-                -- Users list message
-                case Decode.decodeString usersDecoder messageText of
-                    Ok userList ->
-                        ( { model | users = userList }
-                        , Cmd.none
-                        )
-
-                    Err _ ->
-                        ( model, Cmd.none )
-
-            else
-                -- Chat message
-                case Decode.decodeString messageDecoder messageText of
-                    Ok message ->
-                        ( { model | messages = model.messages ++ [ message ] }
-                        , Cmd.none
-                        )
-
-                    Err _ ->
-                        ( model, Cmd.none )
-
-        WsClientMsg wsMsg ->
-            case wsMsg of
-                WSM.Error error ->
-                    update (WsError error) model
-
-                WSM.Opened key ->
-                    update WsConnected model
-
-                WSM.Closed key code ->
-                    update WsDisconnected model
-
-                WSM.StringMessage key str ->
-                    update (WsReceived str) model
-
-                WSM.BytesMessage _ _ ->
-                    -- We don't handle binary messages
-                    ( model, Cmd.none )
+            ( newModel, cmd, NoOutMsg )
 
         UpdateMessage message ->
             ( { model | currentMessage = message }
             , Cmd.none
+            , NoOutMsg
             )
 
         UpdateUsername username ->
             let
-                cmd =
+                outMsg =
                     if model.connectionStatus == Connected then
                         let
                             nameChangeMessage =
@@ -189,27 +124,25 @@ update msg model =
                                     ]
                                     |> Encode.encode 0
 
-                            ( wsClient, sendCmd ) =
-                                WSC.send nameChangeMessage model.wsClient
+                            sendMessage =
+                                WebSocket.makeSend model.serverUrl nameChangeMessage
                         in
-                        Cmd.batch
-                            [ sendCmd
-                            , Task.perform (\_ -> NoOp) (Task.succeed ())
-                            ]
+                        SendWSMessage sendMessage
 
                     else
-                        Cmd.none
+                        NoOutMsg
             in
             ( { model | username = username }
-            , cmd
+            , Cmd.none
+            , outMsg
             )
 
         SendMessage ->
             if String.trim model.currentMessage == "" then
-                ( model, Cmd.none )
+                ( model, Cmd.none, NoOutMsg )
 
             else if model.connectionStatus /= Connected then
-                ( model, Cmd.none )
+                ( model, Cmd.none, NoOutMsg )
 
             else
                 let
@@ -221,17 +154,80 @@ update msg model =
                             ]
                             |> Encode.encode 0
 
-                    ( wsClient, cmd ) =
-                        WSC.send chatMessage model.wsClient
+                    sendMessage =
+                        WebSocket.makeSend model.serverUrl chatMessage
                 in
-                ( { model
-                    | currentMessage = ""
-                    , wsClient = wsClient
-                  }
-                , cmd
+                ( { model | currentMessage = "" }
+                , Cmd.none
+                , SendWSMessage sendMessage
                 )
 
         NoOp ->
+            ( model, Cmd.none, NoOutMsg )
+
+
+
+-- Helper function to handle WebSocket responses
+
+
+handleWebSocketResponse : WebSocket.Response -> Model -> ( Model, Cmd Msg )
+handleWebSocketResponse response model =
+    case response of
+        WebSocket.OpenResponse { url } ->
+            -- Connection established, send join message
+            let
+                joinMessage =
+                    Encode.object
+                        [ ( "type", Encode.string "join" )
+                        , ( "username", Encode.string model.username )
+                        ]
+                        |> Encode.encode 0
+
+                -- We can't send the message directly from here,
+                -- so we'll delay it slightly to let the Main module handle it
+                delayedSend =
+                    Process.sleep 100
+                        |> Task.perform (\_ -> SendMessage)
+            in
+            ( { model | connectionStatus = Connected }
+            , Cmd.none
+            )
+
+        WebSocket.MessageResponse { message } ->
+            -- Process received message
+            if String.startsWith "{\"users\":" message then
+                -- Users list message
+                case Decode.decodeString usersDecoder message of
+                    Ok userList ->
+                        ( { model | users = userList }
+                        , Cmd.none
+                        )
+
+                    Err _ ->
+                        ( model, Cmd.none )
+
+            else
+                -- Chat message
+                case Decode.decodeString messageDecoder message of
+                    Ok msg ->
+                        ( { model | messages = model.messages ++ [ msg ] }
+                        , Cmd.none
+                        )
+
+                    Err _ ->
+                        ( model, Cmd.none )
+
+        WebSocket.ClosedResponse { code, wasClean, expected } ->
+            ( { model | connectionStatus = Disconnected }
+            , Cmd.none
+            )
+
+        WebSocket.ErrorResponse { error } ->
+            ( { model | connectionStatus = Failed error }
+            , Cmd.none
+            )
+
+        _ ->
             ( model, Cmd.none )
 
 
@@ -240,8 +236,9 @@ update msg model =
 
 
 subscriptions : Model -> Sub Msg
-subscriptions model =
-    WSC.listen WsClientMsg model.wsClient
+subscriptions _ =
+    -- In our architecture, Main.elm forwards WebSocket messages to us
+    Sub.none
 
 
 

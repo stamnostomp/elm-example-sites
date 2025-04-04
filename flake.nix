@@ -12,7 +12,6 @@
         pkgs = nixpkgs.legacyPackages.${system};
 
         # Create a wrapper script that generates a precompiled elm.js file
-        # This script should be run on your development machine, not during the build
         elmPrebuilderScript = pkgs.writeShellScriptBin "prebuild-elm" ''
           #!/usr/bin/env bash
           set -euo pipefail
@@ -53,7 +52,7 @@
 
         # Build the Haskell WebSocket Chat Server
         chatServer = pkgs.haskellPackages.developPackage {
-          root = ./src/chat;
+          root = ./src/Chat;
           name = "elm-chat-server";
           modifier = drv:
             pkgs.haskell.lib.overrideCabal drv (oldAttrs: {
@@ -91,6 +90,214 @@
           # When elm-dev is terminated, also kill the chat server
           kill $CHAT_SERVER_PID
           echo "Both servers have been stopped."
+        '';
+
+        # New script to install required Elm packages for WebSocket functionality
+        elmPackageSetupScript = pkgs.writeShellScriptBin "setup-elm-websocket" ''
+          #!/usr/bin/env bash
+          set -euo pipefail
+
+          echo "Installing required Elm WebSocket packages..."
+
+          # Check if elm is available
+          if ! command -v elm &> /dev/null; then
+            echo "Error: elm is not installed or not in path"
+            exit 1
+          fi
+
+          # Install the required packages - use --yes to auto-accept
+          echo "Installing billstclair/elm-port-funnel..."
+          elm install billstclair/elm-port-funnel --yes
+
+          echo "Installing billstclair/elm-port-funnel-websocket..."
+          elm install billstclair/elm-port-funnel-websocket --yes
+
+          echo "Installing billstclair/elm-websocket-client... (fallback option)"
+          elm install billstclair/elm-websocket-client --yes
+
+          # Create the ports JavaScript file if it doesn't exist
+          if [ ! -f "public/port-funnel.js" ]; then
+            echo "Creating port-funnel.js helper file in public directory..."
+            mkdir -p public
+            cat > public/port-funnel.js << 'EOF'
+// Port Funnel support for Elm WebSocket
+(function() {
+    // Set up ports for the Elm app
+    function setupPorts(app) {
+        if (!app.ports || !app.ports.cmdPort || !app.ports.subPort) {
+            console.error("Required ports not found in Elm application");
+            return;
+        }
+
+        // Handle commands from Elm
+        app.ports.cmdPort.subscribe(function(data) {
+            if (data && data.module === "WebSocket") {
+                handleWebSocketCommand(data.tag, data.args, app.ports.subPort.send);
+            }
+        });
+
+        console.log("Port Funnel WebSocket setup complete");
+    }
+
+    // WebSocket connections
+    var sockets = {};
+
+    // Handle WebSocket commands
+    function handleWebSocketCommand(tag, args, sendBack) {
+        console.log("WebSocket command:", tag, args);
+
+        switch (tag) {
+            case "open":
+                openSocket(args.url, args.name, sendBack);
+                break;
+            case "send":
+                sendMessage(args.name, args.message, sendBack);
+                break;
+            case "close":
+                closeSocket(args.name, args.code, args.reason, sendBack);
+                break;
+        }
+    }
+
+    // Open a WebSocket connection
+    function openSocket(url, name, sendBack) {
+        if (sockets[name]) {
+            closeSocket(name, 1000, "Reopening", sendBack);
+        }
+
+        try {
+            var socket = new WebSocket(url);
+            sockets[name] = socket;
+
+            socket.onopen = function() {
+                sendBack({
+                    module: "WebSocket",
+                    tag: "response",
+                    args: {
+                        name: name,
+                        response: { type: "connected" }
+                    }
+                });
+            };
+
+            socket.onmessage = function(event) {
+                sendBack({
+                    module: "WebSocket",
+                    tag: "response",
+                    args: {
+                        name: name,
+                        response: {
+                            type: "messageReceived",
+                            message: event.data
+                        }
+                    }
+                });
+            };
+
+            socket.onclose = function(event) {
+                delete sockets[name];
+                sendBack({
+                    module: "WebSocket",
+                    tag: "response",
+                    args: {
+                        name: name,
+                        response: {
+                            type: "disconnected",
+                            code: event.code,
+                            reason: event.reason
+                        }
+                    }
+                });
+            };
+
+            socket.onerror = function(error) {
+                sendBack({
+                    module: "WebSocket",
+                    tag: "response",
+                    args: {
+                        name: name,
+                        response: {
+                            type: "error",
+                            error: "WebSocket error"
+                        }
+                    }
+                });
+            };
+        } catch (error) {
+            sendBack({
+                module: "WebSocket",
+                tag: "response",
+                args: {
+                    name: name,
+                    response: {
+                        type: "error",
+                        error: error.message
+                    }
+                }
+            });
+        }
+    }
+
+    // Send a message through the WebSocket
+    function sendMessage(name, message, sendBack) {
+        var socket = sockets[name];
+        if (socket && socket.readyState === WebSocket.OPEN) {
+            socket.send(message);
+        } else {
+            sendBack({
+                module: "WebSocket",
+                tag: "response",
+                args: {
+                    name: name,
+                    response: {
+                        type: "error",
+                        error: "WebSocket not open"
+                    }
+                }
+            });
+        }
+    }
+
+    // Close a WebSocket connection
+    function closeSocket(name, code, reason, sendBack) {
+        var socket = sockets[name];
+        if (socket) {
+            try {
+                socket.close(code || 1000, reason || "");
+                delete sockets[name];
+            } catch (error) {
+                sendBack({
+                    module: "WebSocket",
+                    tag: "response",
+                    args: {
+                        name: name,
+                        response: {
+                            type: "error",
+                            error: error.message
+                        }
+                    }
+                });
+            }
+        }
+    }
+
+    // Expose the setup function
+    window.portFunnelSetup = {
+        websocket: setupPorts
+    };
+})();
+EOF
+
+            echo "Created port-funnel.js helper file in public directory"
+          fi
+
+          # Update index.html to include the port funnel script if needed
+          if [ -f "public/index.html" ] && ! grep -q "port-funnel.js" "public/index.html"; then
+            echo "Adding port-funnel.js script reference to index.html..."
+            sed -i 's|</head>|    <script src="port-funnel.js"></script>\n</head>|' public/index.html
+          fi
+
+          echo "WebSocket setup complete!"
         '';
 
         elmApp = pkgs.stdenv.mkDerivation {
@@ -162,6 +369,7 @@
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
                 <title>Elm Examples Hub</title>
                 <link rel="stylesheet" href="style.css">
+                <script src="port-funnel.js"></script>
               </head>
               <body>
                 <div id="elm-app"></div>
@@ -171,6 +379,11 @@
                     Elm.Main.init({
                       node: document.getElementById("elm-app")
                     }) : null;
+
+                  // Set up port funnel for WebSocket if available
+                  if (app && window.portFunnelSetup && window.portFunnelSetup.websocket) {
+                    window.portFunnelSetup.websocket(app);
+                  }
                 </script>
               </body>
             </html>
@@ -203,6 +416,7 @@
             nodejs
             elmLiveCommand
             elmPrebuilderScript  # Include our prebuilder script
+            elmPackageSetupScript # New WebSocket setup script
 
             # Haskell development tools
             haskellPackages.cabal-install
@@ -219,6 +433,7 @@
             echo "Available commands:"
             echo "  elm-dev            - Start elm live dev server"
             echo "  prebuild-elm       - Create a prebuilt elm.js file for use with nix build"
+            echo "  setup-elm-websocket - Install required Elm WebSocket packages and create helper JS"
             echo "  run-elm-with-chat  - Run both the Elm app and the WebSocket chat server"
             echo ""
             echo "To create a production build:"
@@ -226,6 +441,11 @@
             echo "  2. Run a) 'nix build .#app' to build just the Elm app"
             echo "        b) 'nix build .#chatServer' to build just the WebSocket server"
             echo "        c) 'nix build' to build both"
+            echo ""
+            echo "For WebSocket functionality:"
+            echo "  1. First run 'setup-elm-websocket' to install necessary packages"
+            echo "  2. Make sure your Main.elm is changed to 'port module Main exposing (main)'"
+            echo "  3. Add the port declarations to your Main.elm file"
             echo ""
           '';
         };

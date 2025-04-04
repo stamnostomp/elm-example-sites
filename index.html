@@ -1,18 +1,24 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="utf-8">
     <title>Elm Examples Hub</title>
     <link rel="stylesheet" href="./style.css">
   </head>
   <body>
+    <!-- Specific div for Elm to take over -->
     <div id="elm-app"></div>
+
+    <!-- Load Elm application first -->
     <script src="elm.js"></script>
-    <script src="websocket.js"></script>
+
+    <!-- Then load WebSocket script -->
+    <script src="/public/websocket.js"></script>
+
+    <!-- Initialize Elm -->
     <script>
-      var app = Elm.Main.init({
-        node: document.getElementById("elm-app")
+      Elm.Main.init({
+        node: document.getElementById('elm-app')
       });
     </script>
   </body>

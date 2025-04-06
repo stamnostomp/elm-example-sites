@@ -112,7 +112,7 @@ update msg model =
             let
                 joinMessage =
                     Encode.object
-                        [ ( "type", Encode.string "join" )
+                        [ ( "joinType", Encode.string "join" )
                         , ( "username", Encode.string model.username )
                         ]
                         |> Encode.encode 0
@@ -168,7 +168,7 @@ update msg model =
                         let
                             nameChangeMessage =
                                 Encode.object
-                                    [ ( "type", Encode.string "rename" )
+                                    [ ( "renameType", Encode.string "rename" )
                                     , ( "oldName", Encode.string model.username )
                                     , ( "newName", Encode.string username )
                                     ]
@@ -195,7 +195,7 @@ update msg model =
                 let
                     chatMessage =
                         Encode.object
-                            [ ( "type", Encode.string "message" )
+                            [ ( "msgType", Encode.string "message" )
                             , ( "sender", Encode.string model.username )
                             , ( "content", Encode.string model.currentMessage )
                             ]

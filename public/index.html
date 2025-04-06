@@ -2,8 +2,9 @@
 <html lang="en">
   <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Elm Examples Hub</title>
-    <link rel="stylesheet" href="/public/style.css">
+    <link rel="stylesheet" href="public/style.css">
   </head>
   <body>
     <!-- Specific div for Elm to take over -->
@@ -12,14 +13,18 @@
     <!-- Load Elm application first -->
     <script src="elm.js"></script>
 
-    <!-- Then load WebSocket script -->
-    <script src="/public/websocket.js"></script>
-
-    <!-- Initialize Elm -->
+    <!-- Initialize Elm and make it globally available to other scripts -->
     <script>
-      Elm.Main.init({
-        node: document.getElementById('elm-app')
+      document.addEventListener('DOMContentLoaded', function() {
+        // Initialize Elm app and store it in a global variable
+        window.elmApp = Elm.Main.init({
+          node: document.getElementById("elm-app")
+        });
+        console.log("Elm application initialized successfully");
       });
     </script>
+
+    <!-- Then load WebSocket script which will use the global elmApp -->
+    <script src="public/websocket.js"></script>
   </body>
 </html>

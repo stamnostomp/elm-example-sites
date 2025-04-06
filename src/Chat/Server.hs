@@ -6,7 +6,7 @@ module Main where
 import Control.Concurrent (MVar, newMVar, modifyMVar_, modifyMVar, readMVar)
 import Control.Exception (finally)
 import Control.Monad (forM_, forever)
-import Data.Aeson (FromJSON, ToJSON, decode, encode, Value(..))
+import Data.Aeson (FromJSON(..), ToJSON(..), decode, encode, Value(..), (.:), (.=), withObject, object)
 import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
@@ -33,20 +33,21 @@ data ServerState = ServerState
   , clients :: Map Int Client
   }
 
+-- Each message type has a different field name to avoid conflicts
 data ChatMessage = ChatMessage
-  { msgType :: Text
+  { chatType :: Text  -- Using chatType instead of type_
   , sender :: Text
   , content :: Text
   , timestamp :: Int
   } deriving (Generic, Show)
 
 data JoinMessage = JoinMessage
-  { joinType :: Text
+  { joinType :: Text  -- Using joinType instead of type_
   , username :: Text
   } deriving (Generic, Show)
 
 data RenameMessage = RenameMessage
-  { renameType :: Text
+  { renameType :: Text  -- Using renameType instead of type_
   , oldName :: Text
   , newName :: Text
   } deriving (Generic, Show)
@@ -55,14 +56,36 @@ data UsersListMessage = UsersListMessage
   { users :: [Text]
   } deriving (Generic, Show)
 
-instance ToJSON ChatMessage
-instance FromJSON ChatMessage
+-- Custom instances to ensure field names match what the client expects
+instance ToJSON ChatMessage where
+  toJSON (ChatMessage t s c ts) =
+    object [ "type" .= t, "sender" .= s, "content" .= c, "timestamp" .= ts ]
 
-instance ToJSON JoinMessage
-instance FromJSON JoinMessage
+instance FromJSON ChatMessage where
+  parseJSON = withObject "ChatMessage" $ \v -> ChatMessage
+    <$> v .: "type"
+    <*> v .: "sender"
+    <*> v .: "content"
+    <*> v .: "timestamp"
 
-instance ToJSON RenameMessage
-instance FromJSON RenameMessage
+instance ToJSON JoinMessage where
+  toJSON (JoinMessage t u) =
+    object [ "type" .= t, "username" .= u ]
+
+instance FromJSON JoinMessage where
+  parseJSON = withObject "JoinMessage" $ \v -> JoinMessage
+    <$> v .: "type"
+    <*> v .: "username"
+
+instance ToJSON RenameMessage where
+  toJSON (RenameMessage t o n) =
+    object [ "type" .= t, "oldName" .= o, "newName" .= n ]
+
+instance FromJSON RenameMessage where
+  parseJSON = withObject "RenameMessage" $ \v -> RenameMessage
+    <$> v .: "type"
+    <*> v .: "oldName"
+    <*> v .: "newName"
 
 instance ToJSON UsersListMessage
 instance FromJSON UsersListMessage
@@ -137,7 +160,8 @@ chatApp stateRef pending = do
 
     -- Wait for the join message with the username
     msg <- WS.receiveData conn
-    case decode msg of
+    T.putStrLn $ "Received initial message: " <> msg
+    case decode (WS.toLazyByteString msg) of
       Just (JoinMessage "join" name) -> do
         -- Create a new client and add it to the server state
         userId <- modifyMVar stateRef $ \state -> do
@@ -205,6 +229,7 @@ handleMessage msgText clientId stateRef conn = do
     Just client -> do
       -- Try to decode as different message types directly
       let bs = WS.toLazyByteString msgText
+      T.putStrLn $ "Received message: " <> msgText
 
       -- Try as a chat message first
       case decode bs of

@@ -78,7 +78,7 @@ init =
     , username = "Guest"
     , connectionStatus = Disconnected
     , users = []
-    , serverUrl = "ws://localhost:9160/chat"
+    , serverUrl = "ws://localhost:9160"
     }
 
 
